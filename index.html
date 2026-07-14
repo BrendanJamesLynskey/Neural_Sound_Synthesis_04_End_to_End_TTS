@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Sound Synthesis · Part 4 — End-to-End Text-to-Speech</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});"></script>
+<style>
+:root {
+  --bg: #0a0b0f;
+  --bg2: #12141c;
+  --bg3: #1a1d2a;
+  --fg: #d4d6e0;
+  --fg-dim: #8a8d9a;
+  --accent: #f0728f;
+  --accent2: #8b7bf0;
+  --accent3: #5ce89a;
+  --accent4: #e85a7a;
+  --accent5: #e8a44a;
+  --border: #2a2d3a;
+  --glow: rgba(74,199,232,0.15);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:16px}
+body{background:var(--bg);color:var(--fg);font-family:'Palatino Linotype','Book Antiqua',Palatino,'Georgia',serif;line-height:1.75;overflow-x:hidden}
+::selection{background:var(--accent);color:var(--bg)}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .2s}
+a:hover{border-bottom-color:var(--accent)}
+
+header{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:2rem;position:relative;overflow:hidden}
+header canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;opacity:.5}
+header .content{position:relative;z-index:1;max-width:880px}
+header .eyebrow{font-family:'Lucida Console',Monaco,monospace;font-size:.8rem;letter-spacing:.3em;text-transform:uppercase;color:var(--accent2);margin-bottom:1.4em}
+header h1{font-size:clamp(2rem,5vw,3.4rem);font-weight:300;letter-spacing:.04em;color:var(--accent);text-shadow:0 0 60px rgba(74,199,232,.3);margin-bottom:.3em}
+header h1 em{font-style:italic;color:var(--fg);font-weight:400}
+header .subtitle{font-size:1.12rem;color:var(--fg-dim);max-width:680px;margin:0 auto 2em}
+header .people{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin-bottom:2em}
+header .people span{font-size:.85rem;color:var(--fg);padding:.35em .9em;border:1px solid var(--border);border-radius:2px;background:rgba(26,29,42,.7)}
+header .cta{display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap}
+
+nav#toc{position:sticky;top:0;z-index:100;background:rgba(10,11,15,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:.6rem 1rem;overflow-x:auto;white-space:nowrap;text-align:center}
+nav#toc a{display:inline-block;font-size:.78rem;color:var(--fg-dim);padding:.3em .7em;margin:0 .1em;letter-spacing:.04em;text-transform:uppercase;font-family:'Lucida Console',Monaco,monospace;transition:color .2s;border-bottom:none}
+nav#toc a:hover,nav#toc a.active{color:var(--accent)}
+
+section{max-width:920px;margin:0 auto;padding:4rem 1.5rem;border-bottom:1px solid var(--border)}
+section:last-of-type{border-bottom:none}
+h2{font-size:clamp(1.5rem,3vw,2.2rem);font-weight:300;color:var(--accent);margin-bottom:.3em;letter-spacing:.03em}
+h2 .num{font-family:'Lucida Console',Monaco,monospace;font-size:.7em;color:var(--fg-dim);margin-right:.5em}
+h3{font-size:1.2rem;color:var(--accent2);margin:2em 0 .5em;font-weight:400}
+h4{font-size:1rem;color:var(--accent3);margin:1.5em 0 .3em;font-weight:400}
+p{margin-bottom:1.2em}
+ul,ol{padding-left:1.4em;margin-bottom:1.2em}
+li{margin-bottom:.5em}
+.lead{font-size:1.08rem;color:var(--fg);margin-bottom:1.5em}
+
+.viz{margin:2em 0;background:var(--bg2);border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.viz canvas{display:block;width:100%;cursor:crosshair}
+.viz-caption{font-size:.8rem;color:var(--fg-dim);padding:.6em 1em;border-top:1px solid var(--border);font-family:'Lucida Console',Monaco,monospace}
+
+.controls{display:flex;flex-wrap:wrap;gap:.8rem;padding:.8em 1em;background:var(--bg3);border-top:1px solid var(--border);align-items:center}
+.controls label{font-size:.78rem;color:var(--fg-dim);font-family:'Lucida Console',Monaco,monospace;display:flex;align-items:center;gap:.4em}
+.controls input[type="range"]{width:120px;accent-color:var(--accent)}
+.controls select{background:var(--bg);color:var(--fg);border:1px solid var(--border);padding:.3em .5em;font-size:.78rem;border-radius:2px;font-family:inherit}
+.controls button,.btn{background:var(--accent);color:var(--bg);border:none;padding:.45em 1em;font-size:.78rem;font-family:'Lucida Console',Monaco,monospace;cursor:pointer;border-radius:2px;letter-spacing:.03em;transition:background .2s}
+.controls button:hover,.btn:hover{background:#6fd4ef}
+.btn-outline{background:transparent;border:1px solid var(--accent);color:var(--accent)}
+.btn-outline:hover{background:var(--accent);color:var(--bg)}
+.controls .val{color:var(--accent);font-family:'Lucida Console',monospace;font-size:.78rem;min-width:2.5em;display:inline-block}
+.tabrow{display:flex;gap:.3em;flex-wrap:wrap}
+.tabrow button{background:var(--bg);border:1px solid var(--border);color:var(--fg-dim)}
+.tabrow button.on{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+
+.math{display:block;text-align:center;padding:1.4em 1.2em;margin:1.5em 0;background:var(--bg2);border-left:3px solid var(--accent);font-size:1.1rem;color:var(--fg);overflow-x:auto;border-radius:0 4px 4px 0}
+.math .katex{font-size:1.2em}
+.math-inline .katex{font-size:1.0em}
+
+.timeline{position:relative;padding:1em 0 1em 2em;margin:2em 0}
+.timeline::before{content:'';position:absolute;left:.6em;top:0;bottom:0;width:2px;background:var(--border)}
+.timeline-item{position:relative;margin-bottom:1.8em;padding-left:1.5em}
+.timeline-item::before{content:'';position:absolute;left:-1.95em;top:.4em;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+.timeline-year{font-family:'Lucida Console',Monaco,monospace;color:var(--accent);font-size:.85rem;margin-bottom:.2em}
+.timeline-text{font-size:.95rem;color:var(--fg-dim)}
+.timeline-text strong{color:var(--fg)}
+
+blockquote{border-left:3px solid var(--accent5);padding:.8em 1.2em;margin:1.5em 0;color:var(--fg-dim);font-style:italic;background:rgba(232,164,74,.05)}
+blockquote cite{display:block;font-size:.85rem;color:var(--accent5);margin-top:.5em;font-style:normal}
+
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1.5em;margin:1.5em 0}
+@media(max-width:700px){.grid-2{grid-template-columns:1fr}}
+
+.references{margin-top:2em;padding:1.5em;background:var(--bg2);border:1px solid var(--border);border-radius:4px}
+.references h3{margin-top:0}
+.references ol{padding-left:1.5em}
+.references li{font-size:.85rem;color:var(--fg-dim);margin-bottom:.5em;line-height:1.5}
+.references li em{color:var(--fg)}
+
+footer{text-align:center;padding:3em 1.5em;color:var(--fg-dim);font-size:.85rem;border-top:1px solid var(--border)}
+footer a{color:var(--accent2)}
+
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--fg-dim)}
+
+.expandable{margin:1.5em 0;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.expandable summary{padding:.8em 1.2em;background:var(--bg3);cursor:pointer;font-size:.9rem;color:var(--accent2);font-family:'Lucida Console',Monaco,monospace;letter-spacing:.03em;list-style:none;display:flex;align-items:center;gap:.5em}
+.expandable summary::before{content:'>';font-size:.7em;transition:transform .2s}
+details[open] summary::before{transform:rotate(90deg)}
+.expandable summary:hover{color:var(--fg)}
+.expandable .inner{padding:1.2em 1.4em;background:rgba(139,123,240,.04)}
+.expandable .inner p:last-child{margin-bottom:0}
+
+.note{font-size:.9rem;color:var(--fg-dim);margin:1em 0;padding:.6em 1em;border-left:2px solid var(--accent3);background:rgba(92,232,154,.05)}
+.warn{font-size:.9rem;color:var(--fg-dim);margin:1em 0;padding:.6em 1em;border-left:2px solid var(--accent4);background:rgba(232,90,122,.05)}
+.note strong,.warn strong{color:var(--fg)}
+
+table{width:100%;border-collapse:collapse;margin:1.5em 0;font-size:.9rem}
+th,td{padding:.5em .8em;border:1px solid var(--border);text-align:left;vertical-align:top}
+th{background:var(--bg3);color:var(--accent2);font-weight:400;font-family:'Lucida Console',Monaco,monospace;font-size:.76rem;letter-spacing:.03em}
+td{color:var(--fg-dim)}
+td code,p code,li code{font-family:'Lucida Console',Monaco,monospace;font-size:.85em;color:var(--accent3);background:rgba(92,232,154,.07);padding:.05em .3em;border-radius:2px}
+
+.xref{display:flex;flex-wrap:wrap;gap:.6em;margin:1.5em 0}
+.xref a{font-size:.8rem;padding:.5em 1em;border:1px solid var(--border);background:var(--bg3);font-family:'Lucida Console',Monaco,monospace;color:var(--fg-dim);border-bottom:none;border-radius:3px;transition:all .2s}
+.xref a:hover{color:var(--accent);border-color:var(--accent)}
+.xref a .k{display:block;font-size:.62rem;letter-spacing:.12em;color:var(--accent);margin-bottom:.2em}
+
+.pill{display:inline-block;font-family:'Lucida Console',monospace;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;padding:.15em .55em;border-radius:2px;border:1px solid var(--border);color:var(--fg-dim);margin-left:.4em;vertical-align:middle}
+</style>
+</head>
+<body>
+
+<header>
+  <canvas id="heroCanvas"></canvas>
+  <div class="content">
+    <div class="eyebrow">Neural Sound Synthesis &middot; Part 4 of 12</div>
+    <h1>End-to-End <em>Text-to-Speech</em></h1>
+    <p class="subtitle">
+      How do you turn a string of letters into a talking voice? For decades the answer was
+      a brittle pipeline of hand-built stages. Then attention learned the alignment, the
+      length regulator made it parallel and robust, and VITS folded the whole thing —
+      text, duration, spectrogram, waveform — into one network trained end to end. Three
+      live demos: an attention aligner that can be made to fail, a length-regulated formant
+      synthesiser you can stretch by ear, and a clickable VITS diagram.
+    </p>
+    <div class="people">
+      <span>Tacotron &middot; Tacotron 2</span>
+      <span>FastSpeech 1 / 2</span>
+      <span>Glow-TTS &middot; VITS</span>
+    </div>
+    <div class="cta">
+      <a href="#pipeline" class="btn">Begin &#8595;</a>
+      <a href="https://brendanjameslynskey.github.io/Neural_Sound_Synthesis/" class="btn btn-outline" target="_blank" rel="noopener">Series hub</a>
+    </div>
+  </div>
+</header>
+
+<nav id="toc">
+  <a href="#pipeline">1 &middot; The Pipeline</a>
+  <a href="#tacotron">2 &middot; Tacotron &amp; Attention</a>
+  <a href="#fastspeech">3 &middot; FastSpeech</a>
+  <a href="#vits">4 &middot; VITS</a>
+  <a href="#frontier">5 &middot; Frontier</a>
+  <a href="#timeline">6 &middot; Timeline</a>
+  <a href="#next">Next</a>
+</nav>
+
+<!-- ============================================================ -->
+<section id="pipeline">
+  <h2><span class="num">1</span>The pipeline — from a string of letters to a moving voice</h2>
+  <p class="lead">
+    Text-to-speech is a translation between two wildly mismatched sequences: a handful of
+    discrete characters, and hundreds of thousands of continuous audio samples with their
+    own pitch, rhythm and timbre. The modern solution splits the work into two learned
+    stages joined by a spectrogram, and the story of this part is how that seam was
+    progressively erased.
+  </p>
+  <div class="math">
+    $$\underbrace{\text{text}}_{\sim 20\ \text{chars}} \;\xrightarrow{\ \text{acoustic model}\ }\; \underbrace{\text{mel spectrogram}}_{80\times\sim 800}\;\xrightarrow{\ \text{vocoder}\ }\; \underbrace{\text{waveform}}_{\sim 3\times10^{5}\ \text{samples}}$$
+  </div>
+  <p>
+    The <strong>acoustic model</strong> (this part) maps text to a mel spectrogram — an
+    80-band, ~86-frames-per-second picture of the sound. The <strong>vocoder</strong>
+    (Part&nbsp;3) inverts that mel into an audible waveform. The mel is the interface: it
+    throws away phase and fine detail so the acoustic model can work in a compact,
+    friendly space, and lets the vocoder be trained and swapped independently.
+  </p>
+  <p>
+    The hard part is that <em>nobody tells the model the alignment</em>. A word may map to
+    three frames or thirty; the network must discover, unsupervised, which stretch of audio
+    each letter is responsible for. Everything below is a different answer to that one
+    question: <strong>soft attention</strong> (Tacotron), <strong>an explicit duration</strong>
+    (FastSpeech), or <strong>a monotonic search inside a VAE</strong> (VITS).
+  </p>
+
+  <table>
+    <thead><tr><th>System</th><th>Alignment mechanism</th><th>Decoder</th><th>Speed</th><th>Robustness</th></tr></thead>
+    <tbody>
+      <tr><td><strong style="color:var(--accent)">Tacotron&nbsp;2</strong></td>
+        <td>Learned <em>soft</em> attention (location-sensitive)</td>
+        <td>Autoregressive, one frame at a time</td>
+        <td>Slow</td><td>Fragile — can babble / loop</td></tr>
+      <tr><td><strong style="color:var(--accent2)">FastSpeech&nbsp;2</strong></td>
+        <td>Explicit <em>duration</em> per phoneme + length regulator</td>
+        <td>Non-autoregressive, all frames at once</td>
+        <td>Very fast</td><td>Robust by construction</td></tr>
+      <tr><td><strong style="color:var(--accent3)">VITS</strong></td>
+        <td>Monotonic Alignment Search (MAS) inside a CVAE</td>
+        <td>Flow + HiFi-GAN, text&nbsp;→&nbsp;waveform</td>
+        <td>Fast</td><td>Robust, fully end-to-end</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <strong>Two stages or one?</strong> "End-to-end" gets used loosely. Tacotron&nbsp;2 is
+    end-to-end <em>text&nbsp;→&nbsp;mel</em> but still needs a separate vocoder. VITS is
+    end-to-end <em>text&nbsp;→&nbsp;waveform</em> with no mel at inference at all. This part
+    walks that line from left to right.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="tacotron">
+  <h2><span class="num">2</span>Tacotron &amp; the fragility of attention</h2>
+  <p class="lead">
+    Tacotron (2017) was the first system to go from characters to a spectrogram in a single
+    trained network. Its heart is a sequence-to-sequence model with <strong>attention</strong>:
+    an encoder reads the text, and at every decoder step the model computes a weighted
+    average over the encoded text — a soft pointer to "which letter am I speaking now?".
+  </p>
+
+  <h3>Encoder, attention, autoregressive decoder</h3>
+  <p>
+    The encoder is a <strong>CBHG</strong> stack — a 1-D convolution <em>bank</em>, highway
+    layers, and a bidirectional GRU — turning character embeddings into a sequence of
+    context vectors $h_1,\dots,h_T$. The decoder is autoregressive: it emits one mel frame
+    at a time, feeding each predicted frame back as the input to the next, and it decides
+    where to look with attention weights
+  </p>
+  <div class="math">
+    $$\alpha_{i} = \operatorname{softmax}(e_{i}),\qquad e_{i,j} = \mathbf{v}^{\!\top}\tanh\!\big(W\,\mathbf{s}_{i-1} + V\,h_j + U\,f_{i,j} + b\big)$$
+  </div>
+  <p>
+    where $\mathbf{s}_{i-1}$ is the decoder state, $h_j$ the $j$-th text vector, and the
+    context fed to the decoder is $\mathbf{c}_i = \sum_j \alpha_{i,j}\,h_j$. Tacotron&nbsp;2
+    replaced the CBHG with plain convolutions + LSTM and swapped the vocoder for WaveNet,
+    reaching near-human MOS — but the <em>attention</em> is the fragile organ. A separate
+    <strong>stop token</strong> is predicted each step so the decoder knows when to halt.
+  </p>
+
+  <h3>Content vs location-sensitive attention</h3>
+  <p>
+    Plain <em>content-based</em> attention scores a text vector purely on how well it
+    matches the current state — it has no notion that speech marches <em>forward</em>. It
+    can jump backwards, stick, or attend to two places at once, producing the notorious
+    failure modes: repeated syllables, skipped words, or a collapse into babble. The
+    $U f_{i,j}$ term above is <strong>location-sensitive attention</strong>: $f_{i,j}$ is
+    convolved from the <em>previous</em> attention weights, biasing the model to advance
+    smoothly and monotonically. It is the single most important trick for stable Tacotron.
+  </p>
+
+  <div class="viz">
+    <canvas id="attnViz" height="340" aria-label="encoder-decoder attention alignment matrix animating frame by frame"></canvas>
+    <div class="controls">
+      <div class="tabrow" id="attnTabs">
+        <button data-m="healthy" class="on">Monotonic (healthy)</button>
+        <button data-m="failure">Attention collapse (fail)</button>
+      </div>
+      <button id="attnPlay">⏸ Pause</button>
+      <button id="attnReset" class="btn-outline">↺ Restart</button>
+    </div>
+    <div class="viz-caption" id="attnCap">Rows = text tokens, columns = decoder mel frames. A healthy alignment is a clean monotonic diagonal. Switch to failure to see stalls, skips and split attention.</div>
+  </div>
+  <div class="grid-2">
+    <div class="note"><strong>Read the diagonal.</strong> Each column is one decoder step's distribution over the text. A crisp, steadily-rising ridge means the model knows exactly where it is. That is what "good alignment" looks like — and why researchers plot attention matrices to debug TTS.</div>
+    <div class="warn"><strong>What "the model lost alignment" means.</strong> In the failure mode the ridge stalls on one token (a <em>repeat</em>), then leaps ahead skipping several (a <em>skip</em>), and mass splits across rows (a <em>collapse</em>). Audibly: stuttered or dropped words, or noise. Location-sensitivity exists to prevent exactly this.</div>
+  </div>
+
+  <details class="expandable"><summary>derivation · why soft attention drifts, and what location-sensitivity fixes</summary>
+    <div class="inner">
+      <p>Content attention chooses the alignment for frame $i$ from the energies
+      $e_{i,j}=g(\mathbf{s}_{i-1},h_j)$ alone. Nothing in $g$ references the previous
+      alignment $\alpha_{i-1}$, so the argmax over $j$ can move <em>anywhere</em> between
+      steps — including backwards or nowhere. Over a long utterance small errors compound:
+      once the decoder feeds back a slightly-wrong frame, the state drifts, the next
+      attention is worse, and the loop diverges.</p>
+      <p>Location-sensitive attention adds a term computed from the cumulative attention.
+      Let $F = \mathrm{conv1d}\!\big(\sum_{i'<i}\alpha_{i'}\big)$; then
+      $e_{i,j} = \mathbf{v}^{\!\top}\tanh(W\mathbf{s}_{i-1}+Vh_j+Uf_{i,j}+b)$. Because $f_{i,j}$
+      peaks just <em>after</em> where the model has already attended, the energy is biased to
+      advance by roughly one token per step — encoding the prior that speech is monotonic
+      and surjective. FastSpeech and VITS take this to its logical end: stop <em>softening</em>
+      the alignment and make it a hard, monotonic map.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="fastspeech">
+  <h2><span class="num">3</span>FastSpeech — make alignment explicit, generate in parallel</h2>
+  <p class="lead">
+    FastSpeech (2019) asked: if the failure is the <em>soft</em> attention, why keep it? If
+    we simply <strong>knew</strong> how many frames each phoneme lasts, we could copy each
+    phoneme encoding that many times and decode every frame in parallel — no recurrence, no
+    drift, no runaway loops. That is the <strong>length regulator</strong>, and it makes TTS
+    both fast and robust.
+  </p>
+
+  <h3>The length regulator</h3>
+  <p>
+    Given phoneme encodings $H=[h_1,\dots,h_K]$ and predicted integer durations
+    $d=[d_1,\dots,d_K]$, the length regulator expands $H$ into a frame-level sequence by
+    repeating each $h_k$ exactly $d_k$ times:
+  </p>
+  <div class="math">
+    $$\mathrm{LR}(H,d) = \big[\,\underbrace{h_1,\dots,h_1}_{d_1},\ \underbrace{h_2,\dots,h_2}_{d_2},\ \dots,\ \underbrace{h_K,\dots,h_K}_{d_K}\,\big],\qquad \text{length} = \sum_{k=1}^{K} d_k$$
+  </div>
+  <p>
+    A <strong>duration predictor</strong> — a small conv network on top of the encoder —
+    estimates $d_k$ (in log-space) from the phonemes alone, so at inference no target audio
+    is needed. Multiply all durations by a constant $1/\alpha$ and the whole utterance
+    speeds up or slows down while keeping pitch; that is the speaking-rate knob in the demo.
+  </p>
+
+  <h3>Where the durations come from — FS1 vs FS2</h3>
+  <p>
+    <strong>FastSpeech&nbsp;1</strong> distils them from an <em>autoregressive teacher</em>
+    (a Tacotron-like model): it runs the teacher, reads out its attention matrix, and takes
+    the number of frames each phoneme "won" as the duration label. Clever, but it inherits
+    the teacher's alignment errors. <strong>FastSpeech&nbsp;2</strong> drops the teacher and
+    supervises durations directly from <em>forced alignment</em> (Montreal Forced Aligner),
+    and — crucially — adds <strong>variance adaptors</strong>: it also predicts per-frame
+    <em>pitch</em> ($F_0$) and <em>energy</em>, injecting them before decoding. This fixes
+    the one-to-many problem (the same text can be said many ways) that made FS1 sound flat.
+  </p>
+
+  <div class="viz">
+    <canvas id="lrViz" height="300" aria-label="length regulator expanding phonemes into a frame timeline with formant contour"></canvas>
+    <div class="controls" id="lrPhon"></div>
+    <div class="controls">
+      <label>speaking rate <input type="range" id="lrRate" min="0.6" max="1.8" step="0.05" value="1"><span class="val" id="lrRateV">1.00</span></label>
+      <button id="lrPlay">▶ Synthesise "hello"</button>
+      <button id="lrReset" class="btn-outline">↺ Reset durations</button>
+    </div>
+    <div class="viz-caption" id="lrCap">Four phonemes of "hello". Drag a duration slider: the length regulator widens that phoneme's block, the formant contour holds longer on it, and the synthesised sound lengthens audibly.</div>
+  </div>
+  <p class="note">
+    <strong>Try this:</strong> push <code>OW</code>'s slider to the maximum and press
+    Synthesise — the final vowel drawls. Now pull it to 1 and stretch <code>EH</code>
+    instead. Same phonemes, same pitch; only the <em>timing</em> changed, exactly as the
+    length regulator dictates. The speaking-rate control scales every duration at once.
+  </p>
+
+  <details class="expandable"><summary>derivation · the duration loss and why log-domain</summary>
+    <div class="inner">
+      <p>The duration predictor $\hat d = \mathrm{DP}(H)$ is trained with a mean-squared error
+      against alignment-derived targets $d^\star$, but in the <em>log</em> domain:</p>
+      <div class="math">$$\mathcal{L}_{\text{dur}} = \big\lVert \log(1+\hat d) - \log(1+d^\star)\big\rVert_2^2.$$</div>
+      <p>Durations are positive and heavy-tailed — a stressed vowel can last ten times a
+      plosive. Regressing in log-space makes the loss scale-invariant (a factor-of-two error
+      costs the same for a short and a long phoneme) and keeps the predictor from being
+      dominated by the longest sounds. At inference $\hat d = \mathrm{round}(\exp(\cdot)-1)$,
+      clamped to be non-negative, and the length regulator uses these integer counts. Because
+      every frame is produced independently once $d$ is fixed, decoding is a single parallel
+      pass — the whole reason FastSpeech is an order of magnitude faster than Tacotron.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="vits">
+  <h2><span class="num">4</span>VITS — one network, text to waveform</h2>
+  <p class="lead">
+    Tacotron and FastSpeech both stop at the mel and hand off to a vocoder — two models,
+    two training runs, and a mismatch between the mel the acoustic model produces and the
+    mel the vocoder was trained on. <strong>VITS</strong> (2021) removes the seam entirely.
+    It is a <em>conditional variational autoencoder</em> whose decoder is a HiFi-GAN, trained
+    adversarially, with a normalizing-flow prior and a monotonic alignment search standing in
+    for attention. Text goes in; a waveform comes out; there is no mel at inference.
+  </p>
+
+  <div class="viz">
+    <canvas id="vitsViz" height="360" aria-label="interactive VITS architecture block diagram"></canvas>
+    <div class="controls">
+      <span style="font-size:.78rem;color:var(--fg-dim);font-family:'Lucida Console',monospace">hover / tap a block ▸</span>
+      <button id="vitsTour">▶ Guided tour</button>
+    </div>
+    <div class="viz-caption" id="vitsCap">VITS as a conditional VAE: posterior q(z|x) (bottom) and prior p(z|c) (top) meet at the latent z; a normalizing flow enriches the prior, MAS aligns text to frames, and a HiFi-GAN decoder + discriminators produce the waveform. Hover any block.</div>
+  </div>
+
+  <h3>The pieces, and how they combine</h3>
+  <ul>
+    <li><strong>Posterior encoder</strong> $q(z\mid x)$ — non-causal WaveNet blocks read a
+      <em>linear</em> spectrogram of the target audio and output the mean/variance of the
+      latent $z$. Used in training only.</li>
+    <li><strong>Prior</strong> $p(z\mid c)$ — the text encoder predicts a Gaussian per
+      phoneme; a <strong>normalizing flow</strong> $f_\theta$ then warps it into a far more
+      expressive distribution over $z$.</li>
+    <li><strong>Monotonic Alignment Search (MAS)</strong> — dynamic programming finds the
+      monotonic text-to-frame alignment that maximises the likelihood, replacing attention
+      with a hard, non-skipping map. A <strong>stochastic duration predictor</strong>
+      (itself a flow) lets rhythm <em>vary</em> run to run.</li>
+    <li><strong>HiFi-GAN decoder</strong> — transposed convolutions upsample $z$ straight to
+      a waveform, trained with <strong>multi-period + multi-scale discriminators</strong>
+      plus feature-matching and mel losses.</li>
+  </ul>
+
+  <h3>The objective — an ELBO with a flow</h3>
+  <p>
+    VITS maximises a conditional evidence lower bound: reconstruct the audio from $z$, while
+    keeping the posterior close to the text-conditioned prior.
+  </p>
+  <div class="math">
+    $$\log p(x\mid c) \;\ge\; \mathbb{E}_{q(z\mid x)}\big[\log p(x\mid z)\big] \;-\; D_{\mathrm{KL}}\!\big(q(z\mid x)\,\big\|\,p(z\mid c)\big)$$
+  </div>
+  <p>
+    The flexible prior is what the flow buys. With $z' = f_\theta(z)$ an invertible map into
+    the space where the text-side Gaussian $\mathcal{N}(\mu_\theta,\sigma_\theta)$ lives, the
+    change-of-variables formula gives
+  </p>
+  <div class="math">
+    $$p(z\mid c) = \mathcal{N}\!\big(f_\theta(z);\,\mu_\theta(c,A),\,\sigma_\theta(c,A)\big)\,\left|\det\frac{\partial f_\theta(z)}{\partial z}\right|$$
+  </div>
+  <p>
+    where $A$ is the monotonic alignment chosen by MAS. In practice the reconstruction term
+    is not a raw-waveform likelihood but a <strong>mel-reconstruction loss</strong> plus the
+    <strong>adversarial + feature-matching</strong> losses of HiFi-GAN — so VITS is,
+    literally, a VAE <em>and</em> a flow <em>and</em> a GAN optimised together. That triple
+    is why its samples are both diverse (VAE/flow) and crisp (GAN).
+  </p>
+
+  <details class="expandable"><summary>derivation · why the KL term needs the flow's log-determinant</summary>
+    <div class="inner">
+      <p>The KL between the Gaussian posterior $q(z\mid x)=\mathcal{N}(\mu_q,\sigma_q)$ and a
+      <em>plain</em> Gaussian prior would be closed-form but far too rigid — real latent
+      distributions of speech are multi-modal. VITS instead defines the prior implicitly
+      through an invertible flow. Writing the KL as an expectation,</p>
+      <div class="math">$$D_{\mathrm{KL}} = \mathbb{E}_{q}\big[\log q(z\mid x) - \log p(z\mid c)\big],$$</div>
+      <p>and substituting the change-of-variables density,</p>
+      <div class="math">$$\log p(z\mid c) = \log \mathcal{N}\!\big(f_\theta(z);\mu_\theta,\sigma_\theta\big) + \log\left|\det \tfrac{\partial f_\theta}{\partial z}\right|,$$</div>
+      <p>the Jacobian log-determinant is exactly the correction that keeps $p(z\mid c)$ a
+      valid normalised density after the warp. VITS builds $f_\theta$ from affine coupling
+      layers whose Jacobian is triangular, so $\log|\det|$ is just the sum of the log-scale
+      outputs — cheap to compute and to backprop. The alignment $A$ enters through
+      $\mu_\theta(c,A),\sigma_\theta(c,A)$: MAS picks the monotonic $A$ that maximises this
+      very prior likelihood, so alignment and density estimation are optimised by the same
+      objective — no external aligner, no attention to lose.</p>
+    </div>
+  </details>
+
+  <blockquote>
+    Every earlier idea survives inside VITS, hardened. Location-sensitive attention becomes
+    a hard monotonic search; FastSpeech's deterministic duration becomes a stochastic,
+    flow-sampled one; the mel-then-vocoder split collapses into a single latent. It is the
+    clearest example in this series of composing primitives — VAE, flow, GAN — into one
+    system.
+    <cite>— the through-line from §2 to §4</cite>
+  </blockquote>
+</section>
+
+<!-- ============================================================ -->
+<section id="frontier">
+  <h2><span class="num">5</span>Glow-TTS, and the token-LM frontier</h2>
+  <p class="lead">
+    VITS did not appear from nowhere. Two threads fed it, and one thread leads out of it
+    toward the language-model era that Part&nbsp;10 explores.
+  </p>
+
+  <h3>Glow-TTS — the missing link</h3>
+  <p>
+    <strong>Glow-TTS</strong> (2020) is the model that made <em>monotonic alignment search</em>
+    practical. It is a flow-based, non-autoregressive text-to-mel model: a flow maps the mel
+    to a latent whose prior is a per-phoneme Gaussian, and MAS finds the monotonic alignment
+    between them by dynamic programming — no attention, no external aligner, exact likelihood.
+    VITS takes Glow-TTS's MAS and prior flow, swaps text-to-mel for text-to-<em>waveform</em>
+    by bolting on a HiFi-GAN decoder and adversarial training, and wraps the whole thing in a
+    VAE. Read Glow-TTS as VITS minus the vocoder and the adversary.
+  </p>
+
+  <h3>Beyond spectrograms — TTS as a language model</h3>
+  <p>
+    Everything above generates <em>continuous</em> acoustic features. A different lineage
+    treats speech as a sequence of <strong>discrete tokens</strong> from a neural codec
+    (Part&nbsp;9) and models them with a transformer language model — literally next-token
+    prediction over sound. <strong>VALL-E</strong> (2023) reframed TTS this way: condition the
+    LM on a 3-second enrolment clip and it performs <em>zero-shot</em> voice cloning,
+    reproducing a speaker's timbre and prosody from that single prompt, because in-context
+    learning transfers from text LMs to audio tokens. This is the bridge to prompt-based,
+    zero-shot TTS — and the subject of Part&nbsp;10.
+  </p>
+  <div class="note">
+    <strong>Two philosophies, one goal.</strong> VITS pours everything into a single
+    end-to-end network trained from scratch on one corpus. Token-LM TTS (VALL-E, and
+    successors) leans on massive codec-token pretraining and a prompt. The field now runs on
+    both rails; which wins depends on data, latency and how much control you want.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="timeline">
+  <h2><span class="num">6</span>Five years, end to end</h2>
+  <p>
+    The seam between text and waveform was erased in stages, each dissolving one more
+    hand-built component. In 2017 you needed a vocoder, an aligner and a lot of luck; by 2021
+    a single network did the lot.
+  </p>
+  <div class="timeline">
+    <div class="timeline-item"><div class="timeline-year">2017</div><div class="timeline-text"><strong>Tacotron</strong> makes character-to-spectrogram end-to-end with seq2seq attention. <strong>Tacotron&nbsp;2</strong> adds location-sensitive attention + a WaveNet vocoder and reaches near-human MOS — but the attention is fragile. <span class="pill">§2</span></div></div>
+    <div class="timeline-item"><div class="timeline-year">2019</div><div class="timeline-text"><strong>FastSpeech</strong> ditches soft attention for an explicit duration predictor and a length regulator — non-autoregressive, parallel, robust — with durations distilled from an AR teacher. <span class="pill">§3</span></div></div>
+    <div class="timeline-item"><div class="timeline-year">2020</div><div class="timeline-text"><strong>Glow-TTS</strong> introduces monotonic alignment search with a flow prior; <strong>FastSpeech&nbsp;2</strong> supervises duration from forced alignment and adds pitch/energy variance adaptors. <span class="pill">§3 · §5</span></div></div>
+    <div class="timeline-item"><div class="timeline-year">2021</div><div class="timeline-text"><strong>VITS</strong> unifies text encoder, MAS, flow prior, stochastic duration and a HiFi-GAN decoder into one adversarially-trained CVAE — text to waveform, no mel at inference. <span class="pill">§4</span></div></div>
+    <div class="timeline-item"><div class="timeline-year">2023</div><div class="timeline-text"><strong>VALL-E</strong> recasts TTS as a language model over neural-codec tokens, unlocking zero-shot voice cloning from a 3-second prompt — the road into Part&nbsp;10. <span class="pill">§5 · Part 10</span></div></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="next">
+  <h2><span class="num">→</span>Where to go next</h2>
+  <p>
+    You now have the acoustic-model half of speech synthesis: how text is aligned to time
+    (attention, durations, MAS), how a spectrogram is predicted, and how VITS folds even the
+    vocoder into the same network. The mel these models emit still has to become sound —
+    that inversion is Part&nbsp;3. Extending the same machinery with an explicit pitch target
+    turns speech into <em>song</em> in Part&nbsp;5, and treating audio as tokens for a
+    language model is Part&nbsp;10.
+  </p>
+  <div class="xref">
+    <a href="https://brendanjameslynskey.github.io/Neural_Sound_Synthesis/"><span class="k">Series hub</span>All twelve parts &middot; the interactive map</a>
+    <a href="https://brendanjameslynskey.github.io/Neural_Sound_Synthesis_03_Neural_Vocoders_GAN/"><span class="k">Part 3 ←</span>Neural Vocoders — the mel inverter</a>
+    <a href="https://brendanjameslynskey.github.io/Neural_Sound_Synthesis_05_Neural_Singing_Voice/"><span class="k">Part 5 →</span>Neural Singing Voice — TTS + pitch</a>
+    <a href="https://github.com/BrendanJamesLynskey/DSP_and_Music"><span class="k">Collection</span>DSP &amp; Music</a>
+  </div>
+  <div class="references">
+    <h3>References</h3>
+    <ol>
+      <li>Wang, Y. et&nbsp;al. (2017). <em>Tacotron: Towards End-to-End Speech Synthesis.</em> Interspeech.</li>
+      <li>Shen, J. et&nbsp;al. (2018). <em>Natural TTS Synthesis by Conditioning WaveNet on Mel Spectrogram Predictions (Tacotron&nbsp;2).</em> ICASSP.</li>
+      <li>Chorowski, J. et&nbsp;al. (2015). <em>Attention-Based Models for Speech Recognition.</em> NeurIPS. (Location-sensitive attention.)</li>
+      <li>Ren, Y. et&nbsp;al. (2019). <em>FastSpeech: Fast, Robust and Controllable Text to Speech.</em> NeurIPS.</li>
+      <li>Ren, Y. et&nbsp;al. (2021). <em>FastSpeech 2: Fast and High-Quality End-to-End Text to Speech.</em> ICLR.</li>
+      <li>Kim, J. et&nbsp;al. (2020). <em>Glow-TTS: A Generative Flow for Text-to-Speech via Monotonic Alignment Search.</em> NeurIPS.</li>
+      <li>Kim, J., Kong, J., Son, J. (2021). <em>Conditional Variational Autoencoder with Adversarial Learning for End-to-End Text-to-Speech (VITS).</em> ICML.</li>
+      <li>Wang, C. et&nbsp;al. (2023). <em>Neural Codec Language Models are Zero-Shot Text-to-Speech Synthesizers (VALL-E).</em> arXiv:2301.02111.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Neural Sound Synthesis &middot; Part 4 — End-to-End Text-to-Speech<br>
+    Part of the <a href="https://github.com/BrendanJamesLynskey/DSP_and_Music" target="_blank" rel="noopener">DSP &amp; Music</a> collection &middot;
+    single-file HTML/CSS/JS &middot; Web Audio API &middot; KaTeX &middot; no dependencies.
+  </p>
+</footer>
+
+<script>
+(function(){
+"use strict";
+// ── utilities ─────────────────────────────────────────────────
+const DPR=window.devicePixelRatio||1;
+function setupCanvas(c,w,h){ c.width=Math.round(w*DPR); c.height=Math.round(h*DPR); c.style.height=h+'px'; const x=c.getContext('2d'); x.setTransform(DPR,0,0,DPR,0,0); return x; }
+function fitWidth(c){ const r=c.parentElement.getBoundingClientRect(); return Math.max(320,Math.floor(r.width)); }
+let audioCtx=null;
+function actx(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); return audioCtx; }
+function play(samples,sr){ const a=actx(); const b=a.createBuffer(1,samples.length,sr); b.getChannelData(0).set(samples); const s=a.createBufferSource(); s.buffer=b; const g=a.createGain(); g.gain.value=0.9; s.connect(g); g.connect(a.destination); s.start(); return s; }
+function fade(buf,n){ const N=buf.length,k=Math.min(n,N>>1); for(let i=0;i<k;i++){ buf[i]*=i/k; buf[N-1-i]*=i/k; } return buf; }
+
+const SR=16000;
+
+// ── DEMO 1: attention alignment animator ──────────────────────
+(function attention(){
+  const c=document.getElementById('attnViz'); if(!c) return;
+  const cap=document.getElementById('attnCap'); const H=340;
+  let W=fitWidth(c); let ctx=setupCanvas(c,W,H);
+  const tokens=['H','EH','L','OW','·','W','ER','L','D'];
+  const T=tokens.length, FR=72;
+  let mode='healthy', step=0, running=true, tick=0, raf=null;
+
+  function column(f){
+    const col=new Float32Array(T);
+    const prog=f/(FR-1);
+    if(mode==='healthy'){
+      const center=prog*(T-1);
+      for(let i=0;i<T;i++) col[i]=Math.exp(-Math.pow((i-center)/0.75,2));
+    } else {
+      let center, sharp=0.85;
+      if(prog<0.28){ center=prog/0.28*2.6; }
+      else if(prog<0.62){ center=2.6; sharp=1.8; }               // stall + repeat, blurs → collapse
+      else { center=5 + (prog-0.62)/0.38*(T-1-5); }               // skip 3,4,5 then run
+      for(let i=0;i<T;i++) col[i]=Math.exp(-Math.pow((i-center)/sharp,2));
+      if(prog>0.45){ for(let i=0;i<T;i++) col[i]+=0.5*Math.exp(-Math.pow((i-(T-1))/1.3,2)); } // split peak
+    }
+    let s=0; for(let i=0;i<T;i++) s+=col[i]; if(s>0) for(let i=0;i<T;i++) col[i]/=s;
+    return col;
+  }
+  function heat(v){ const a=Math.min(1,Math.pow(v*2.6,0.7)); const r=Math.round(18+a*(240-18)); const g=Math.round(20+a*(114-20)); const b=Math.round(30+a*(143-30)); return `rgb(${r},${g},${b})`; }
+
+  function draw(){
+    ctx.fillStyle='#12141c'; ctx.fillRect(0,0,W,H);
+    const padL=64, padR=16, padT=22, padB=34;
+    const pw=W-padL-padR, phh=H-padT-padB;
+    const cw=pw/FR, ch=phh/T;
+    ctx.font="11px 'Lucida Console',monospace"; ctx.textAlign='right'; ctx.textBaseline='middle';
+    for(let i=0;i<T;i++){ ctx.fillStyle='#8a8d9a'; ctx.fillText(tokens[i], padL-8, padT+(T-1-i+0.5)*ch); }
+    for(let f=0; f<=step && f<FR; f++){
+      const col=column(f);
+      for(let i=0;i<T;i++){ ctx.fillStyle=heat(col[i]); ctx.fillRect(padL+f*cw, padT+(T-1-i)*ch, cw+0.7, ch+0.7); }
+    }
+    ctx.strokeStyle='rgba(120,124,140,0.18)'; ctx.lineWidth=1; ctx.strokeRect(padL,padT,pw,phh);
+    if(step<FR){ ctx.strokeStyle='#5ce89a'; ctx.lineWidth=1.6; ctx.strokeRect(padL+step*cw, padT, Math.max(2,cw), phh); }
+    ctx.fillStyle='#8a8d9a'; ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.font="10px 'Lucida Console',monospace";
+    ctx.fillText('decoder mel frames →  (step '+Math.min(step,FR)+'/'+FR+')', padL, H-12);
+    ctx.save(); ctx.translate(16, padT+phh*0.9); ctx.rotate(-Math.PI/2); ctx.fillText('text tokens →',0,0); ctx.restore();
+  }
+  function frame(){ tick++; if(running && (tick&1)===0 && step<FR) step++; draw(); raf=requestAnimationFrame(frame); }
+
+  document.getElementById('attnTabs').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; mode=b.dataset.m; step=0; running=true; document.getElementById('attnPlay').textContent='⏸ Pause'; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); cap.textContent = mode==='healthy' ? 'Healthy: a clean monotonic ridge — each decoder step advances one text token. This is the alignment you want.' : 'Failure: the ridge stalls (repeat), leaps ahead (skip) and mass splits across rows (collapse) — "the model lost alignment".'; });
+  document.getElementById('attnPlay').addEventListener('click',e=>{ running=!running; e.target.textContent = running?'⏸ Pause':'▶ Play'; });
+  document.getElementById('attnReset').addEventListener('click',()=>{ step=0; running=true; document.getElementById('attnPlay').textContent='⏸ Pause'; });
+  window.addEventListener('resize',()=>{ W=fitWidth(c); ctx=setupCanvas(c,W,H); draw(); });
+  frame();
+})();
+
+// ── DEMO 2: length regulator + formant synthesis ──────────────
+(function lengthRegulator(){
+  const c=document.getElementById('lrViz'); if(!c) return;
+  const cap=document.getElementById('lrCap'); const H=300;
+  let W=fitWidth(c); let ctx=setupCanvas(c,W,H);
+  const phon=[
+    {lbl:'HH', f1:500, f2:1500, f3:2500, voiced:0.0, amp:0.55, d0:4, col:'#e8a44a'},
+    {lbl:'EH', f1:600, f2:1900, f3:2600, voiced:1.0, amp:1.00, d0:6, col:'#f0728f'},
+    {lbl:'L',  f1:360, f2:1300, f3:2600, voiced:1.0, amp:0.80, d0:5, col:'#5ce89a'},
+    {lbl:'OW', f1:450, f2:900,  f3:2500, voiced:1.0, amp:1.00, d0:9, col:'#8b7bf0'}
+  ];
+  let dur=phon.map(p=>p.d0);
+  const rateEl=document.getElementById('lrRate'), rateV=document.getElementById('lrRateV');
+  const phonBox=document.getElementById('lrPhon');
+
+  // build per-phoneme duration sliders
+  phon.forEach((p,i)=>{
+    const lab=document.createElement('label');
+    lab.innerHTML = p.lbl+' <input type="range" min="1" max="16" step="1" value="'+dur[i]+'"><span class="val">'+dur[i]+'</span>';
+    const sl=lab.querySelector('input'), vv=lab.querySelector('.val');
+    sl.style.accentColor=p.col;
+    sl.addEventListener('input',()=>{ dur[i]=+sl.value; vv.textContent=dur[i]; draw(); });
+    lab._sl=sl; lab._vv=vv; phonBox.appendChild(lab);
+  });
+
+  function totalUnits(){ let s=0; for(const d of dur) s+=d; return s; }
+
+  function draw(){
+    ctx.fillStyle='#12141c'; ctx.fillRect(0,0,W,H);
+    const padL=16, padR=16; const pw=W-padL-padR;
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    // A: phoneme encodings (equal width)
+    ctx.font="10px 'Lucida Console',monospace"; ctx.fillStyle='#8a8d9a';
+    ctx.fillText('PHONEME ENCODINGS  h₁ … h_K', padL, 14);
+    const ay=22, ah=38, ew=pw/phon.length;
+    for(let i=0;i<phon.length;i++){
+      const x=padL+i*ew;
+      ctx.fillStyle=phon[i].col+'33'; ctx.fillRect(x+2, ay, ew-6, ah);
+      ctx.strokeStyle=phon[i].col; ctx.lineWidth=1; ctx.strokeRect(x+2, ay, ew-6, ah);
+      ctx.fillStyle='#d4d6e0'; ctx.font="13px 'Lucida Console',monospace"; ctx.textAlign='center';
+      ctx.fillText(phon[i].lbl, x+ew/2, ay+18);
+      ctx.fillStyle='#8a8d9a'; ctx.font="10px 'Lucida Console',monospace";
+      ctx.fillText('×'+dur[i], x+ew/2, ay+32);
+    }
+    // arrow / label
+    ctx.textAlign='left'; ctx.fillStyle=(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#f0728f');
+    ctx.font="10px 'Lucida Console',monospace";
+    const tot=totalUnits();
+    ctx.fillText('▼ length regulator: repeat h_k  d_k times', padL, ay+ah+16);
+    // B: expanded frame timeline
+    const by=ay+ah+24, bh=40;
+    ctx.fillStyle='#8a8d9a'; ctx.fillText('FRAME TIMELINE  (Σ d_k = '+tot+' frames)', padL+pw-230, by-4);
+    let x=padL;
+    for(let i=0;i<phon.length;i++){
+      const w=dur[i]/tot*pw;
+      ctx.fillStyle=phon[i].col; ctx.globalAlpha=0.85; ctx.fillRect(x, by, Math.max(1,w-1), bh); ctx.globalAlpha=1;
+      if(w>18){ ctx.fillStyle='#0a0b0f'; ctx.font="11px 'Lucida Console',monospace"; ctx.textAlign='center'; ctx.fillText(phon[i].lbl, x+w/2, by+bh/2+4); }
+      // frame grid ticks
+      ctx.strokeStyle='rgba(10,11,15,0.35)'; ctx.lineWidth=1;
+      const fw=w/dur[i];
+      for(let k=1;k<dur[i];k++){ ctx.beginPath(); ctx.moveTo(x+k*fw, by); ctx.lineTo(x+k*fw, by+bh); ctx.stroke(); }
+      x+=w;
+    }
+    // C: formant contour over expanded time
+    const cy0=by+bh+26, chh=H-cy0-14;
+    ctx.textAlign='left'; ctx.fillStyle='#8a8d9a'; ctx.font="10px 'Lucida Console',monospace";
+    ctx.fillText('FORMANT TARGETS  F1 / F2 across frames', padL, cy0-6);
+    const fmax=2600;
+    const mapF=hz=>cy0+chh-(hz/fmax)*chh;
+    // stepped lines
+    function drawFormant(key,col){
+      ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.beginPath(); let first=true; let xx=padL;
+      for(let i=0;i<phon.length;i++){
+        const w=dur[i]/tot*pw; const y=mapF(phon[i][key]);
+        if(first){ ctx.moveTo(xx,y); first=false; } else { ctx.lineTo(xx,y); }
+        ctx.lineTo(xx+w,y); xx+=w;
+      }
+      ctx.stroke();
+    }
+    ctx.strokeStyle='rgba(120,124,140,0.15)'; ctx.strokeRect(padL, cy0, pw, chh);
+    drawFormant('f2','#f0728f'); drawFormant('f1','#5ce89a');
+    ctx.fillStyle='#5ce89a'; ctx.fillText('F1', padL+4, cy0+chh-4); ctx.fillStyle='#f0728f'; ctx.fillText('F2', padL+28, cy0+chh-4);
+  }
+
+  // 2-pole Klatt resonator
+  function reson(x,F,BW,st){ const th=2*Math.PI*F/SR, r=Math.exp(-Math.PI*BW/SR); const B=2*r*Math.cos(th), C=-r*r, A=1-B-C; const y=A*x+B*st.y1+C*st.y2; st.y2=st.y1; st.y1=y; return y; }
+
+  function synthesize(){
+    const rate=+rateEl.value;
+    const secPerUnit=0.030/rate;
+    const unitS=Math.max(1,Math.round(secPerUnit*SR));
+    const frames=[]; phon.forEach((p,i)=>{ for(let d=0;d<dur[i];d++) frames.push(i); });
+    if(frames.length===0) return;
+    const total=frames.length*unitS;
+    const out=new Float32Array(total);
+    let f1=phon[frames[0]].f1, f2=phon[frames[0]].f2, f3=phon[frames[0]].f3;
+    let vd=phon[frames[0]].voiced, am=phon[frames[0]].amp;
+    const s1={y1:0,y2:0}, s2={y1:0,y2:0}, s3={y1:0,y2:0};
+    let gph=0; const sm=0.0016;
+    for(let n=0;n<total;n++){
+      const fr=Math.min(frames.length-1,(n/unitS)|0);
+      const p=phon[frames[fr]];
+      f1+=(p.f1-f1)*sm; f2+=(p.f2-f2)*sm; f3+=(p.f3-f3)*sm;
+      vd+=(p.voiced-vd)*sm*3; am+=(p.amp-am)*sm*3;
+      const t=n/SR; const f0=124*Math.exp(-t*0.16);   // slight declination
+      gph+=f0/SR; let imp=0; if(gph>=1){ gph-=1; imp=1; }
+      const noise=Math.random()*2-1;
+      const src = vd*imp*6.0 + (1-vd)*noise*0.5 + vd*noise*0.03;
+      let s=reson(src,f1,80,s1); s=reson(s,f2,100,s2); s=reson(s,f3,160,s3);
+      out[n]=s*am;
+    }
+    let m=0; for(let n=0;n<total;n++){ const a=Math.abs(out[n]); if(a>m) m=a; }
+    if(m>0){ const g=0.9/m; for(let n=0;n<total;n++) out[n]*=g; }
+    play(fade(out,300),SR);
+    cap.textContent='Synthesised '+frames.length+' frames ≈ '+(total/SR).toFixed(2)+' s at rate '+rate.toFixed(2)+'×. Change a slider and press Synthesise again.';
+  }
+
+  rateEl.addEventListener('input',()=>{ rateV.textContent=(+rateEl.value).toFixed(2); });
+  document.getElementById('lrPlay').addEventListener('click',synthesize);
+  document.getElementById('lrReset').addEventListener('click',()=>{ phon.forEach((p,i)=>{ dur[i]=p.d0; const lab=phonBox.children[i]; lab._sl.value=p.d0; lab._vv.textContent=p.d0; }); draw(); });
+  window.addEventListener('resize',()=>{ W=fitWidth(c); ctx=setupCanvas(c,W,H); draw(); });
+  rateV.textContent=(+rateEl.value).toFixed(2);
+  draw();
+})();
+
+// ── DEMO 3: VITS architecture explorer ────────────────────────
+(function vits(){
+  const c=document.getElementById('vitsViz'); if(!c) return;
+  const cap=document.getElementById('vitsCap'); const H=360;
+  let W=fitWidth(c); let ctx=setupCanvas(c,W,H);
+  const DEFAULT='VITS as a conditional VAE: posterior q(z|x) (bottom) and prior p(z|c) (top) meet at the latent z; a normalizing flow enriches the prior, MAS aligns text to frames, and a HiFi-GAN decoder + discriminators produce the waveform. Hover any block.';
+  // grid: col 0..4, row 0..2
+  const boxes=[
+    {id:'text', col:0, row:0, lbl:'Text /\nPhonemes', col2:'#8a8d9a', desc:'Input text is normalised and converted to a phoneme sequence; each phoneme becomes an embedding fed to the text encoder. This is the only input at inference — no audio, no mel.'},
+    {id:'tenc', col:1, row:0, lbl:'Text\nEncoder', col2:'#f0728f', desc:'A transformer encoder produces content features c and predicts, per phoneme, the mean μθ and variance σθ of the prior over the latent z. This is the "prior" side of the CVAE.'},
+    {id:'mas',  col:2, row:0, lbl:'Monotonic\nAlign. Search', col2:'#e8a44a', desc:'MAS: dynamic programming finds the monotonic alignment A between phonemes and latent frames that maximises the prior likelihood. A hard, non-skipping map — it replaces Tacotron\'s fragile soft attention entirely, with no external forced aligner.'},
+    {id:'prior',col:3, row:0, lbl:'Prior\np(z|c)', col2:'#f0728f', desc:'The conditional prior over the latent z given text. Made expressive by pushing the per-phoneme Gaussian through the normalizing flow; MAS aligns it to the posterior frames. The KL term of the ELBO pulls the posterior toward this.'},
+    {id:'dp',   col:1, row:1, lbl:'Stochastic\nDuration Pred.', col2:'#8b7bf0', desc:'A flow-based module that SAMPLES a phoneme duration from a learned distribution, giving varied, natural rhythm run-to-run — unlike FastSpeech\'s single deterministic scalar. At inference it sets how many frames each phoneme occupies.'},
+    {id:'flow', col:3, row:1, lbl:'Normalizing\nFlow  fθ', col2:'#5ce89a', desc:'An invertible map fθ (stacked affine coupling layers). It transforms the latent so the prior is far more flexible than a Gaussian; the change-of-variables term adds log|det ∂f/∂z| to the likelihood. Triangular Jacobian ⇒ the log-det is just a sum of log-scales.'},
+    {id:'spec', col:0, row:2, lbl:'Linear\nSpectrogram', col2:'#8a8d9a', desc:'A linear-scale STFT magnitude of the TARGET waveform. Used only during training — it is the input to the posterior encoder, the "recognition" side of the VAE.'},
+    {id:'penc', col:1, row:2, lbl:'Posterior\nEncoder q(z|x)', col2:'#8b7bf0', desc:'Non-causal WaveNet residual blocks read the linear spectrogram and output the mean/variance of the approximate posterior q(z|x). z is sampled from it via the reparameterisation trick during training.'},
+    {id:'z',    col:2, row:2, lbl:'Latent\nz', col2:'#5ce89a', desc:'The latent variable z. Sampled from the posterior q(z|x) in training, or from the prior p(z|c) at inference. Everything downstream — the decoder — sees only z, never a mel.'},
+    {id:'dec',  col:3, row:2, lbl:'Decoder\n(HiFi-GAN)', col2:'#f0728f', desc:'A HiFi-GAN generator: transposed convolutions with multi-receptive-field fusion upsample z straight to a 22/24 kHz waveform. No separate vocoder — the decoder IS the vocoder, trained jointly.'},
+    {id:'wave', col:4, row:2, lbl:'Waveform\nx̂', col2:'#5ce89a', desc:'The output waveform, produced fully end-to-end from text. Reconstruction is scored with a mel loss + adversarial + feature-matching losses — that mix is the "reconstruction" term of the ELBO in practice.'},
+    {id:'disc', col:4, row:1, lbl:'Discriminators\n(adversarial)', col2:'#e85a7a', desc:'Multi-period + multi-scale discriminators judge real vs generated waveforms. Their adversarial + feature-matching losses give the decoder the sharp, natural high frequencies HiFi-GAN is known for — the "GAN" in VITS = VAE + flow + GAN.'}
+  ];
+  const arrows=[
+    ['text','tenc',0],['tenc','mas',0],['mas','prior',1],['tenc','prior',0],['tenc','dp',0],
+    ['spec','penc',0],['penc','z',0],['z','flow',0],['flow','prior',1],
+    ['z','dec',0],['dec','wave',0],['wave','disc',1]
+  ];
+  let hover=null, tour=false, tourIdx=0, tourTimer=null;
+
+  function layout(){
+    const cols=5, rows=3;
+    const padL=14, padR=14, padT=26, padB=20;
+    const cellW=(W-padL-padR)/cols, cellH=(H-padT-padB)/rows;
+    const bw=Math.min(140, cellW-12), bh=46;
+    boxes.forEach(b=>{
+      b.x=padL + b.col*cellW + (cellW-bw)/2;
+      b.y=padT + b.row*cellH + (cellH-bh)/2;
+      b.w=bw; b.h=bh;
+      b.cx=b.x+bw/2; b.cy=b.y+bh/2;
+    });
+  }
+  function byId(id){ return boxes.find(b=>b.id===id); }
+
+  function arrow(a,b,dashed){
+    const dx=b.cx-a.cx, dy=b.cy-a.cy, len=Math.hypot(dx,dy)||1; const ux=dx/len, uy=dy/len;
+    // clip to box edges (approx: shrink by half-extent along axis)
+    const ax=a.cx+ux*(a.w/2)*Math.abs(ux)*1.0 + ux*(Math.abs(uy)>Math.abs(ux)? (a.h/2):0);
+    // simpler: start/end at center offset by fixed
+    const sx=a.cx+ux*(a.w*0.5*Math.min(1,Math.abs(ux)+0.15));
+    const sy=a.cy+uy*(a.h*0.5*Math.min(1,Math.abs(uy)+0.15));
+    const ex=b.cx-ux*(b.w*0.5*Math.min(1,Math.abs(ux)+0.15));
+    const ey=b.cy-uy*(b.h*0.5*Math.min(1,Math.abs(uy)+0.15));
+    ctx.strokeStyle=dashed?'rgba(232,164,74,0.55)':'rgba(140,144,160,0.5)'; ctx.lineWidth=1.3;
+    if(dashed) ctx.setLineDash([4,3]); else ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.stroke(); ctx.setLineDash([]);
+    // arrowhead
+    const ah=6, a1=Math.atan2(ey-sy,ex-sx);
+    ctx.fillStyle=dashed?'rgba(232,164,74,0.7)':'rgba(160,164,180,0.7)';
+    ctx.beginPath(); ctx.moveTo(ex,ey); ctx.lineTo(ex-ah*Math.cos(a1-0.4),ey-ah*Math.sin(a1-0.4)); ctx.lineTo(ex-ah*Math.cos(a1+0.4),ey-ah*Math.sin(a1+0.4)); ctx.closePath(); ctx.fill();
+  }
+
+  function draw(){
+    ctx.fillStyle='#12141c'; ctx.fillRect(0,0,W,H);
+    ctx.font="10px 'Lucida Console',monospace"; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle='#f0728f'; ctx.fillText('PRIOR  (text → z)  ▸ inference path', 14, 16);
+    ctx.fillStyle='#8b7bf0'; ctx.textAlign='right'; ctx.fillText('POSTERIOR  (audio → z)  ▸ training only', W-14, 16);
+    ctx.textAlign='left';
+    arrows.forEach(([f,t,d])=>arrow(byId(f),byId(t),d));
+    boxes.forEach(b=>{
+      const on=(hover===b.id);
+      ctx.fillStyle= on? b.col2 : b.col2+'26';
+      ctx.strokeStyle=b.col2; ctx.lineWidth=on?2:1;
+      roundRect(b.x,b.y,b.w,b.h,5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle= on? '#0a0b0f' : '#d4d6e0';
+      ctx.font="11px 'Lucida Console',monospace"; ctx.textAlign='center'; ctx.textBaseline='middle';
+      const lines=b.lbl.split('\n');
+      lines.forEach((ln,k)=>ctx.fillText(ln, b.cx, b.cy - (lines.length-1)*6 + k*12));
+      ctx.textBaseline='alphabetic';
+    });
+  }
+  function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+  function hit(mx,my){ for(const b of boxes){ if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h) return b; } return null; }
+  function setHover(id){ hover=id; const b=id?byId(id):null; cap.textContent = b? (b.lbl.replace('\n',' ')+' — '+b.desc) : DEFAULT; draw(); }
+
+  c.addEventListener('mousemove',e=>{ const r=c.getBoundingClientRect(); const b=hit(e.clientX-r.left, e.clientY-r.top); if(!tour) setHover(b?b.id:null); });
+  c.addEventListener('mouseleave',()=>{ if(!tour) setHover(null); });
+  c.addEventListener('click',e=>{ const r=c.getBoundingClientRect(); const b=hit(e.clientX-r.left, e.clientY-r.top); if(b){ tour=false; const bt=document.getElementById('vitsTour'); if(bt) bt.textContent='▶ Guided tour'; setHover(b.id); } });
+
+  document.getElementById('vitsTour').addEventListener('click',e=>{
+    tour=!tour;
+    if(tour){ e.target.textContent='⏹ Stop tour'; tourIdx=0; const order=['text','tenc','dp','mas','spec','penc','z','flow','prior','dec','wave','disc'];
+      const stepFn=()=>{ if(!tour){ return; } setHover(order[tourIdx]); tourIdx=(tourIdx+1)%order.length; };
+      stepFn(); tourTimer=setInterval(stepFn,2200);
+    } else { e.target.textContent='▶ Guided tour'; clearInterval(tourTimer); setHover(null); }
+  });
+
+  window.addEventListener('resize',()=>{ W=fitWidth(c); ctx=setupCanvas(c,W,H); layout(); draw(); });
+  layout(); draw();
+})();
+
+// ── hero animation: waveform morphing into spectrogram bars ───
+(function hero(){
+  const c=document.getElementById('heroCanvas'); if(!c) return;
+  const W=()=>Math.max(320,document.documentElement.clientWidth);
+  const H=()=>Math.max(400,Math.min(window.innerHeight,900));
+  let ctx=setupCanvas(c,W(),H());
+  const N=200; let ph=0; let last=performance.now();
+  function frame(now){
+    const w=W(),h=H(); if(c.width!==Math.round(w*DPR)||c.height!==Math.round(h*DPR)) ctx=setupCanvas(c,w,h);
+    const dt=Math.min(0.05,(now-last)/1000); last=now; ph+=dt*0.6;
+    ctx.fillStyle='rgba(10,11,15,0.22)'; ctx.fillRect(0,0,w,h);
+    const morph=0.5+0.5*Math.sin(ph*0.5); // 0 = waveform, 1 = bars
+    ctx.strokeStyle='rgba(74,199,232,0.75)'; ctx.lineWidth=1.6;
+    for(let i=0;i<N;i++){
+      const x=i/(N-1)*w;
+      const tt=i*0.12+ph*3;
+      const wav=Math.sin(tt)+0.5*Math.sin(tt*2.01)+0.3*Math.sin(tt*3.03);
+      const env=0.4+0.6*Math.abs(Math.sin(i*0.05+ph));
+      const barTop=h*0.5 - env*h*0.30*(0.5+0.5*Math.sin(i*0.7+ph*2));
+      const wy=h*0.5 - wav*h*0.09;
+      if(morph<0.5){ // waveform line
+        if(i===0){ctx.beginPath(); ctx.moveTo(x,wy);} else ctx.lineTo(x,wy);
+      }
+    }
+    if(morph<0.5) ctx.stroke();
+    if(morph>=0.5){ // spectrogram-ish bars
+      for(let i=0;i<N;i++){ const x=i/(N-1)*w; const env=Math.abs(Math.sin(i*0.09+ph*1.3))*Math.abs(Math.sin(i*0.3+ph)); const hh=env*h*0.34*(morph); ctx.fillStyle=`rgba(${60+env*120|0},${120+env*100|0},${200},${0.15+env*0.5})`; ctx.fillRect(x-1, h*0.5-hh, 3, hh*2); }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  window.addEventListener('resize',()=>{ ctx=setupCanvas(c,W(),H()); });
+})();
+
+// ── scroll-spy ────────────────────────────────────────────────
+(function toc(){
+  const links=document.querySelectorAll('nav#toc a');
+  const secs=Array.from(links).map(a=>document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  function onScroll(){ const y=window.scrollY+120; let k=0; for(let i=0;i<secs.length;i++){ if(secs[i].offsetTop<=y) k=i; } links.forEach(a=>a.classList.remove('active')); if(links[k]) links[k].classList.add('active'); }
+  window.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+})();
+})();
+</script>
+</body>
+</html>
